@@ -4,11 +4,13 @@ const User = require('../models/User');
 const auth = async (req, res, next) => {
   try {
     // Get token from header
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const authHeader = req.header('Authorization');
     
-    if (!token) {
-      throw new Error();
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new Error('No token provided');
     }
+    
+    const token = authHeader.replace('Bearer ', '');
     
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -17,19 +19,20 @@ const auth = async (req, res, next) => {
     const user = await User.findById(decoded._id).select('-password');
     
     if (!user) {
-      throw new Error();
+      throw new Error('User not found');
+    }
+    
+    if (!user.isActive) {
+      throw new Error('Account is deactivated');
     }
     
     // Attach user to request
     req.user = user;
     req.token = token;
     
-    // Update last active
-    user.lastActive = new Date();
-    await user.save();
-    
     next();
   } catch (error) {
+    console.error('Auth middleware error:', error.message);
     res.status(401).json({
       success: false,
       message: 'Please authenticate'
@@ -37,26 +40,4 @@ const auth = async (req, res, next) => {
   }
 };
 
-// Admin middleware
-const adminAuth = async (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Admin access required'
-    });
-  }
-  next();
-};
-
-// Premium middleware
-const premiumAuth = async (req, res, next) => {
-  if (req.user.role !== 'premium' && req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Premium subscription required'
-    });
-  }
-  next();
-};
-
-module.exports = { auth, adminAuth, premiumAuth };
+module.exports = { auth };

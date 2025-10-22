@@ -21,10 +21,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please provide a password'],
     minlength: 6,
-    select: false
+    select: false // Don't return password by default
   },
   
-  // Profile Information
+  // Profile Information (collected after registration)
   profile: {
     age: {
       type: Number,
@@ -55,193 +55,62 @@ const userSchema = new mongoose.Schema({
       enum: ['Lose Weight', 'Maintain Weight', 'Gain Weight', 'Build Muscle', 'Improve Health'],
       default: 'Improve Health'
     },
-    dietaryPreferences: [{
-      type: String,
-      enum: ['Vegetarian', 'Vegan', 'Keto', 'Paleo', 'Gluten-Free', 'Dairy-Free', 'Halal', 'Kosher']
-    }],
-    healthConditions: [{
-      type: String,
-      enum: ['Diabetes', 'Hypertension', 'Heart Disease', 'Asthma', 'Allergies', 'None']
-    }],
-    profileImage: {
-      type: String,
-      default: null
-    }
+    profileImage: String
   },
   
   // Calculated Fields
-  bmi: {
-    type: Number,
-    default: 0
-  },
-  bmr: {
-    type: Number,
-    default: 0
-  },
+  bmi: Number,
+  bmr: Number,
   dailyCalorieGoal: {
     type: Number,
     default: 2000
   },
   
-  // Gamification
-  gamification: {
-    points: {
-      type: Number,
-      default: 0
-    },
-    level: {
-      type: Number,
-      default: 1
-    },
-    streak: {
-      current: {
-        type: Number,
-        default: 0
-      },
-      longest: {
-        type: Number,
-        default: 0
-      }
-    },
-    badges: [{
-      badgeId: String,
-      name: String,
-      earnedAt: Date
-    }],
-    achievements: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Achievement'
-    }]
-  },
-  
-  // Settings
-  settings: {
-    notifications: {
-      water: { type: Boolean, default: true },
-      meals: { type: Boolean, default: true },
-      exercise: { type: Boolean, default: true },
-      sleep: { type: Boolean, default: true },
-      challenges: { type: Boolean, default: true }
-    },
-    privacy: {
-      profileVisibility: {
-        type: String,
-        enum: ['Public', 'Friends', 'Private'],
-        default: 'Friends'
-      },
-      shareProgress: { type: Boolean, default: true }
-    },
-    units: {
-      weight: { type: String, enum: ['kg', 'lbs'], default: 'kg' },
-      height: { type: String, enum: ['cm', 'ft'], default: 'cm' },
-      distance: { type: String, enum: ['km', 'miles'], default: 'km' }
-    }
-  },
-  
-  // Social
-  friends: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
-  friendRequests: [{
-    from: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'accepted', 'rejected'],
-      default: 'pending'
-    },
-    sentAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  
-  // Authentication
-  role: {
-    type: String,
-    enum: ['user', 'premium', 'admin'],
-    default: 'user'
-  },
+  // Account Status
   isEmailVerified: {
     type: Boolean,
     default: false
   },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  
+  // Authentication Tokens
   emailVerificationToken: String,
+  emailVerificationExpires: Date,
   passwordResetToken: String,
   passwordResetExpires: Date,
   
-  // Subscription
-  subscription: {
-    type: {
-      type: String,
-      enum: ['free', 'premium'],
-      default: 'free'
-    },
-    startDate: Date,
-    endDate: Date,
-    autoRenew: {
-      type: Boolean,
-      default: false
-    }
-  },
-  
-  // Tracking
-  lastActive: {
+  // Timestamps
+  lastLogin: Date,
+  createdAt: {
     type: Date,
     default: Date.now
-  },
-  joinedAt: {
-    type: Date,
-    default: Date.now
-  },
-  
-  // Device tokens for push notifications
-  deviceTokens: [{
-    token: String,
-    platform: {
-      type: String,
-      enum: ['ios', 'android', 'web']
-    }
-  }]
+  }
 }, {
   timestamps: true
 });
 
-// Indexes for better query performance
+// Index for faster queries
 userSchema.index({ email: 1 });
-userSchema.index({ 'profile.age': 1, 'profile.gender': 1 });
-userSchema.index({ 'gamification.points': -1 });
-userSchema.index({ lastActive: -1 });
-
-// Virtual for full profile completion
-userSchema.virtual('profileCompletion').get(function() {
-  const requiredFields = ['profile.age', 'profile.gender', 'profile.height', 'profile.weight', 'profile.goal'];
-  const completed = requiredFields.filter(field => {
-    const value = field.split('.').reduce((obj, key) => obj?.[key], this);
-    return value !== undefined && value !== null;
-  });
-  return Math.round((completed.length / requiredFields.length) * 100);
-});
 
 // Calculate BMI and BMR before saving
 userSchema.pre('save', function(next) {
   if (this.profile.height && this.profile.weight) {
     // Calculate BMI
     const heightInMeters = this.profile.height / 100;
-    this.bmi = this.profile.weight / (heightInMeters * heightInMeters);
+    this.bmi = parseFloat((this.profile.weight / (heightInMeters * heightInMeters)).toFixed(2));
     
     // Calculate BMR using Mifflin-St Jeor Equation
     if (this.profile.age && this.profile.gender) {
       if (this.profile.gender === 'Male') {
-        this.bmr = 10 * this.profile.weight + 6.25 * this.profile.height - 5 * this.profile.age + 5;
+        this.bmr = Math.round(10 * this.profile.weight + 6.25 * this.profile.height - 5 * this.profile.age + 5);
       } else {
-        this.bmr = 10 * this.profile.weight + 6.25 * this.profile.height - 5 * this.profile.age - 161;
+        this.bmr = Math.round(10 * this.profile.weight + 6.25 * this.profile.height - 5 * this.profile.age - 161);
       }
       
-      // Calculate daily calorie goal based on activity level and goal
+      // Calculate daily calorie goal
       let activityMultiplier = 1.2;
       switch(this.profile.activityLevel) {
         case 'Lightly Active': activityMultiplier = 1.375; break;
@@ -252,11 +121,10 @@ userSchema.pre('save', function(next) {
       
       let tdee = this.bmr * activityMultiplier;
       
-      // Adjust for goal
       switch(this.profile.goal) {
-        case 'Lose Weight': this.dailyCalorieGoal = tdee - 500; break;
-        case 'Gain Weight': this.dailyCalorieGoal = tdee + 500; break;
-        default: this.dailyCalorieGoal = tdee;
+        case 'Lose Weight': this.dailyCalorieGoal = Math.round(tdee - 500); break;
+        case 'Gain Weight': this.dailyCalorieGoal = Math.round(tdee + 500); break;
+        default: this.dailyCalorieGoal = Math.round(tdee);
       }
     }
   }
@@ -265,63 +133,54 @@ userSchema.pre('save', function(next) {
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
+  // Only hash if password is modified
   if (!this.isModified('password')) return next();
   
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  try {
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    throw new Error('Password comparison failed');
+  }
 };
 
 // Generate JWT token
 userSchema.methods.generateAuthToken = function() {
-  return jwt.sign(
-    { 
-      _id: this._id,
-      email: this.email,
-      role: this.role
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE }
-  );
+  const payload = {
+    _id: this._id,
+    email: this.email,
+    name: this.name
+  };
+  
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRE || '7d'
+  });
 };
 
-// Add points method
-userSchema.methods.addPoints = async function(points, reason) {
-  this.gamification.points += points;
-  
-  // Level up logic (every 1000 points = 1 level)
-  const newLevel = Math.floor(this.gamification.points / 1000) + 1;
-  if (newLevel > this.gamification.level) {
-    this.gamification.level = newLevel;
-    // You can emit an event here for level up notification
-  }
-  
-  await this.save();
-  return this.gamification;
+// Generate email verification token
+userSchema.methods.generateEmailVerificationToken = function() {
+  const verificationToken = Math.floor(100000 + Math.random() * 900000).toString();
+  this.emailVerificationToken = verificationToken;
+  this.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  return verificationToken;
 };
 
-// Update streak
-userSchema.methods.updateStreak = async function() {
-  const lastActive = new Date(this.lastActive);
-  const today = new Date();
-  const diffDays = Math.floor((today - lastActive) / (1000 * 60 * 60 * 24));
-  
-  if (diffDays === 1) {
-    this.gamification.streak.current += 1;
-    if (this.gamification.streak.current > this.gamification.streak.longest) {
-      this.gamification.streak.longest = this.gamification.streak.current;
-    }
-  } else if (diffDays > 1) {
-    this.gamification.streak.current = 1;
-  }
-  
-  this.lastActive = today;
-  await this.save();
+// Generate password reset token
+userSchema.methods.generatePasswordResetToken = function() {
+  const resetToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  this.passwordResetToken = resetToken;
+  this.passwordResetExpires = Date.now() + 30 * 60 * 1000; // 30 minutes
+  return resetToken;
 };
 
 module.exports = mongoose.model('User', userSchema);
